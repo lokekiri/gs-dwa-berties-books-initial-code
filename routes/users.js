@@ -26,6 +26,19 @@ router.get('/login', function(req, res, next) {
     res.render("login.ejs");
 });
 
+// Show audit history
+router.get('/audit', function(req, res, next) {
+    let sqlquery = "SELECT * FROM audit ORDER BY time DESC";
+
+    db.query(sqlquery, (err, result) => {
+        if (err) {
+            next(err);
+        } else {
+            res.render("audit.ejs", { audit: result });
+        }
+    });
+});
+
 router.post('/registered', function(req, res, next) {
     const plainPassword = req.body.password;
 
@@ -63,7 +76,6 @@ router.post('/loggedin', function(req, res, next) {
     const username = req.body.username;
     const password = req.body.password;
 
-    // 1. Get user's hashed password from the DB
     let sqlquery = "SELECT * FROM users WHERE username = ?";
     db.query(sqlquery, [username], (err, result) => {
         if (err) {
@@ -72,20 +84,35 @@ router.post('/loggedin', function(req, res, next) {
 
         // If no user found
         if (result.length === 0) {
+
+            // Log failed login
+            let auditFail = "INSERT INTO audit (username, status) VALUES (?, 'fail')";
+            db.query(auditFail, [username]);
+
             return res.send("Login failed: username not found.");
         }
 
         const storedHash = result[0].hashedPassword;
 
-        // 2. Compare password with the hash
         bcrypt.compare(password, storedHash, function(err, match) {
             if (err) {
                 next(err);
-            } 
-            else if (match === true) {
-                res.send("Login successful! Welcome " + username);
             }
+
+            if (match === true) {
+
+                // Log successful login
+                let auditSuccess = "INSERT INTO audit (username, status) VALUES (?, 'success')";
+                db.query(auditSuccess, [username]);
+
+                res.send("Login successful! Welcome " + username);
+            } 
             else {
+
+                // Log failed login
+                let auditFail = "INSERT INTO audit (username, status) VALUES (?, 'fail')";
+                db.query(auditFail, [username]);
+
                 res.send("Login failed: incorrect password.");
             }
         });
